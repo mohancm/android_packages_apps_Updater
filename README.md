@@ -15,7 +15,7 @@ a JSON with the following structure:
       "datetime": 1230764400,
       "filename": "ota-package.zip",
       "id": "5eb63bbbe01eeed093cb22bb8f5acdc3",
-      "romtype": "nightly",
+      "type": "OS",
       "size": 314572800,
       "url": "https://example.com/ota-package.zip",
       "version": "15.1"
@@ -26,11 +26,11 @@ a JSON with the following structure:
 
 The `datetime` attribute is the build date expressed as UNIX timestamp.  
 The `filename` attribute is the name of the file to be downloaded.  
-The `id` attribute is a string that uniquely identifies the update.  
-The `romtype` attribute is the string to be compared with the `ro.lineage.releasetype` property.  
+The `id` attribute is a string that uniquely identifies the update. (MD5 Hash)
+The `type` attribute is the string that determines if the update is for the OS or for an APK.  
 The `size` attribute is the size of the update expressed in bytes.  
 The `url` attribute is the URL of the file to be downloaded.  
-The `version` attribute is the string to be compared with the `ro.lineage.build.version` property.  
+The `version` attribute is the string that sets OS or APK version
 
 Additional attributes are ignored.
 

@@ -185,7 +185,15 @@ public class UpdaterController {
                     Update update = entry.mUpdate;
                     update.setStatus(UpdateStatus.VERIFYING);
                     removeDownloadClient(entry);
-                    verifyUpdateAsync(downloadId);
+                    if (update.getType().equals("OS"))
+                        verifyUpdateAsync(downloadId);
+                    else {
+                        // Skip validation because it's an APK
+                        update.getFile().setReadable(true, false);
+                        update.setPersistentStatus(UpdateStatus.Persistent.VERIFIED);
+                        mUpdatesDbHelper.changeUpdateStatus(update);
+                        update.setStatus(UpdateStatus.VERIFIED);
+                    }
                     notifyUpdateChange(downloadId);
                     tryReleaseWakelock();
                 }
@@ -256,7 +264,6 @@ public class UpdaterController {
                 Update update = entry.mUpdate;
                 File file = update.getFile();
                 if (file.exists() && verifyPackage(file)) {
-                    //noinspection ResultOfMethodCallIgnored
                     file.setReadable(true, false);
                     update.setPersistentStatus(UpdateStatus.Persistent.VERIFIED);
                     mUpdatesDbHelper.changeUpdateStatus(update);
@@ -376,7 +383,7 @@ public class UpdaterController {
         try {
             downloadClient = new DownloadClient.Builder()
                     .setUrl(update.getDownloadUrl())
-                    .setDestination(update.getFile())
+                    .setDestination(update.getType().equals("APK") ? new File(update.getFile().getAbsolutePath() + ".apk") : update.getFile())
                     .setDownloadCallback(getDownloadCallback(downloadId))
                     .setProgressListener(getProgressListener(downloadId))
                     .setUseDuplicateLinks(true)

@@ -195,7 +195,11 @@ public class UpdaterService extends Service {
                 throw new IllegalArgumentException(update.getDownloadId() + " is not verified");
             }
             try {
-                if (Utils.isABUpdate(update.getFile())) {
+                if (update.getType().equals("APK")) {
+                    UpdateInstaller installer = UpdateInstaller.getInstance(this,
+                            mUpdaterController);
+                    installer.install(downloadId);
+                } else if (Utils.isABUpdate(update.getFile())) {
                     ABUpdateInstaller installer = ABUpdateInstaller.getInstance(this,
                             mUpdaterController);
                     installer.install(downloadId);

@@ -36,6 +36,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.lineageos.updater.R;
 import org.lineageos.updater.UpdatesDbHelper;
+import org.lineageos.updater.controller.APKExtKt;
 import org.lineageos.updater.controller.UpdaterService;
 import org.lineageos.updater.model.Update;
 import org.lineageos.updater.model.UpdateBaseInfo;
@@ -50,6 +51,7 @@ import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -62,7 +64,8 @@ public class Utils {
     }
 
     public static File getDownloadPath(Context context) {
-        return new File(context.getString(R.string.download_path));
+        //return new File(context.getString(R.string.download_path));
+        return context.getExternalFilesDir("Downloads");
     }
 
     public static File getExportPath(Context context) {
@@ -87,44 +90,52 @@ public class Utils {
         update.setTimestamp(object.getLong("datetime"));
         update.setName(object.getString("filename"));
         update.setDownloadId(object.getString("id"));
-        update.setType(object.getString("romtype"));
+        update.setType(object.getString("type"));
         update.setFileSize(object.getLong("size"));
         update.setDownloadUrl(object.getString("url"));
         update.setVersion(object.getString("version"));
         return update;
     }
 
-    public static boolean isCompatible(UpdateBaseInfo update) {
-        if (update.getVersion().compareTo(SystemProperties.get(Constants.PROP_BUILD_VERSION)) < 0) {
-            Log.d(TAG, update.getName() + " is older than current Android version");
-            return false;
-        }
-        if (!SystemProperties.getBoolean(Constants.PROP_UPDATER_ALLOW_DOWNGRADING, false) &&
-                update.getTimestamp() <= SystemProperties.getLong(Constants.PROP_BUILD_DATE, 0)) {
-            Log.d(TAG, update.getName() + " is older than/equal to the current build");
-            return false;
-        }
-        if (!update.getType().equalsIgnoreCase(SystemProperties.get(Constants.PROP_RELEASE_TYPE))) {
-            Log.d(TAG, update.getName() + " has type " + update.getType());
-            return false;
+    public static boolean isCompatible(Context context, UpdateBaseInfo update) {
+        if (update.getType().equals("OS")) {
+            if (update.getVersion().compareTo(SystemProperties.get(Constants.PROP_BUILD_VERSION)) < 0) {
+                Log.d(TAG, update.getName() + " is older than current Android version");
+                return false;
+            }
+            if (!SystemProperties.getBoolean(Constants.PROP_UPDATER_ALLOW_DOWNGRADING, false) &&
+                    update.getTimestamp() <= SystemProperties.getLong(Constants.PROP_BUILD_DATE, 0)) {
+                Log.d(TAG, update.getName() + " is older than/equal to the current build");
+                return false;
+            }
+        } else {
+            if (!APKExtKt.isPackageInstalled(update.getName(), context.getPackageManager())) {
+                Log.d(TAG, update.getName() + " skipped. App is not installed");
+                return false;
+            }
+            try {
+                if (APKExtKt.getPackageVersionCode(update.getName(), context.getPackageManager()) >= Long.parseLong(update.getVersion()))
+                    return false;
+            } catch (NullPointerException ignored) {
+            }
         }
         return true;
     }
 
     public static boolean canInstall(UpdateBaseInfo update) {
-        return (SystemProperties.getBoolean(Constants.PROP_UPDATER_ALLOW_DOWNGRADING, false) ||
+        return (update.getType().equals("APK") || (SystemProperties.getBoolean(Constants.PROP_UPDATER_ALLOW_DOWNGRADING, false) ||
                 update.getTimestamp() > SystemProperties.getLong(Constants.PROP_BUILD_DATE, 0)) &&
                 update.getVersion().equalsIgnoreCase(
-                        SystemProperties.get(Constants.PROP_BUILD_VERSION));
+                        SystemProperties.get(Constants.PROP_BUILD_VERSION)));
     }
 
-    public static List<UpdateInfo> parseJson(File file, boolean compatibleOnly)
+    public static List<UpdateInfo> parseJson(Context context, File file, boolean compatibleOnly)
             throws IOException, JSONException {
         List<UpdateInfo> updates = new ArrayList<>();
 
         StringBuilder json = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-            for (String line; (line = br.readLine()) != null;) {
+            for (String line; (line = br.readLine()) != null; ) {
                 json.append(line);
             }
         }
@@ -137,7 +148,7 @@ public class Utils {
             }
             try {
                 UpdateInfo update = parseJsonUpdate(updatesList.getJSONObject(i));
-                if (!compatibleOnly || isCompatible(update)) {
+                if (!compatibleOnly || isCompatible(context, update)) {
                     updates.add(update);
                 } else {
                     Log.d(TAG, "Ignoring incompatible update " + update.getName());
@@ -205,10 +216,10 @@ public class Utils {
      * @param newJson new update list
      * @return true if newJson has at least a compatible update not available in oldJson
      */
-    public static boolean checkForNewUpdates(File oldJson, File newJson)
+    public static boolean checkForNewUpdates(Context context, File oldJson, File newJson)
             throws IOException, JSONException {
-        List<UpdateInfo> oldList = parseJson(oldJson, true);
-        List<UpdateInfo> newList = parseJson(newJson, true);
+        List<UpdateInfo> oldList = parseJson(context, oldJson, true);
+        List<UpdateInfo> newList = parseJson(context, newJson, true);
         Set<String> oldIds = new HashSet<>();
         for (UpdateInfo update : oldList) {
             oldIds.add(update.getDownloadId());
@@ -226,7 +237,7 @@ public class Utils {
     /**
      * Get the offset to the compressed data of a file inside the given zip
      *
-     * @param zipFile input zip file
+     * @param zipFile   input zip file
      * @param entryPath full path of the entry
      * @return the offset of the compressed, or -1 if not found
      * @throws IllegalArgumentException if the given entry is not found
@@ -269,7 +280,6 @@ public class Utils {
      * Cleanup the download directory, which is assumed to be a privileged location
      * the user can't access and that might have stale files. This can happen if
      * the data of the application are wiped.
-     *
      */
     public static void cleanupDownloadsDir(Context context) {
         File downloadPath = getDownloadPath(context);

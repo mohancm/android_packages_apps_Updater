@@ -16,13 +16,20 @@
 package org.lineageos.updater.controller;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.preference.PreferenceManager;
 
+import org.lineageos.updater.UpdatesActivity;
 import org.lineageos.updater.misc.Constants;
 import org.lineageos.updater.misc.FileUtils;
 import org.lineageos.updater.misc.Utils;
@@ -33,10 +40,13 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
-class UpdateInstaller {
+class UpdateInstaller implements APKInstallReceiver.APKInstallListener  {
 
     private static final String TAG = "UpdateInstaller";
 
@@ -49,9 +59,12 @@ class UpdateInstaller {
     private final Context mContext;
     private final UpdaterController mUpdaterController;
 
+    private String tempDownID;
+
     private UpdateInstaller(Context context, UpdaterController controller) {
         mContext = context.getApplicationContext();
         mUpdaterController = controller;
+        APKInstallReceiver.Companion.setListener(this);
     }
 
     static synchronized UpdateInstaller getInstance(Context context,
@@ -90,12 +103,23 @@ class UpdateInstaller {
                 .putBoolean(Constants.PREF_INSTALL_NOTIFIED, false)
                 .apply();
 
-        if (Utils.isEncrypted(mContext, update.getFile())) {
-            // uncrypt rewrites the file so that it can be read without mounting
-            // the filesystem, so create a copy of it.
-            prepareForUncryptAndInstall(update);
+        if (update.getType().equals("APK")) {
+            tempDownID = downloadId;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                APKExtKt.install(mContext, update.getFile());
+                mUpdaterController.getActualUpdate(update.getDownloadId()).setStatus(UpdateStatus.INSTALLING);
+            } else {
+                mUpdaterController.getActualUpdate(update.getDownloadId()).setStatus(UpdateStatus.INSTALLATION_FAILED);
+            }
+            mUpdaterController.notifyUpdateChange(downloadId);
         } else {
-            installPackage(update.getFile(), downloadId);
+            if (Utils.isEncrypted(mContext, update.getFile())) {
+                // uncrypt rewrites the file so that it can be read without mounting
+                // the filesystem, so create a copy of it.
+                prepareForUncryptAndInstall(update);
+            } else {
+                installPackage(update.getFile(), downloadId);
+            }
         }
     }
 
@@ -142,7 +166,7 @@ class UpdateInstaller {
                         perms.add(PosixFilePermission.OTHERS_READ);
                         perms.add(PosixFilePermission.GROUP_READ);
                         Files.setPosixFilePermissions(uncryptFile.toPath(), perms);
-                    } catch (IOException exception) {}
+                    } catch (IOException ignored) {}
 
                     mCanCancel = false;
                     if (mPrepareUpdateThread.isInterrupted()) {
@@ -188,5 +212,23 @@ class UpdateInstaller {
             return;
         }
         mPrepareUpdateThread.interrupt();
+    }
+
+    @Override
+    public void onInstallSuccess(int sessionId) {
+        mUpdaterController.getActualUpdate(tempDownID).setStatus(UpdateStatus.INSTALLED);
+        mUpdaterController.notifyInstallProgress(tempDownID);
+        Log.d(TAG, "Install done");
+        mUpdaterController.deleteUpdate(tempDownID);
+        mUpdaterController.notifyUpdateDelete(tempDownID);
+        tempDownID = null;
+    }
+
+    @Override
+    public void onInstallFailure(@NonNull InstallCallBack installCallBack) {
+        mUpdaterController.getActualUpdate(tempDownID).setStatus(UpdateStatus.INSTALLATION_FAILED);
+        mUpdaterController.notifyInstallProgress(tempDownID);
+        tempDownID = null;
+
     }
 }

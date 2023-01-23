@@ -53,6 +53,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.snackbar.Snackbar;
 
+import org.lineageos.updater.controller.APKExtKt;
 import org.lineageos.updater.controller.UpdaterController;
 import org.lineageos.updater.controller.UpdaterService;
 import org.lineageos.updater.misc.BuildInfoUtils;
@@ -272,8 +273,8 @@ public class UpdatesListAdapter extends RecyclerView.Adapter<UpdatesListAdapter.
 
         String buildDate = StringGenerator.getDateLocalizedUTC(mActivity,
                 DateFormat.LONG, update.getTimestamp());
-        String buildVersion = mActivity.getString(R.string.list_build_version,
-                update.getVersion());
+        String name = update.getType().equals("APK") ? APKExtKt.getAppName(update.getName(), mActivity.getPackageManager()) : update.getName();
+        String buildVersion = String.format("%s %s", name, update.getVersion());
         viewHolder.mBuildDate.setText(buildDate);
         viewHolder.mBuildVersion.setText(buildVersion);
         viewHolder.mBuildVersion.setCompoundDrawables(null, null, null, null);
@@ -466,20 +467,23 @@ public class UpdatesListAdapter extends RecyclerView.Adapter<UpdatesListAdapter.
         UpdateInfo update = mUpdaterController.getUpdate(downloadId);
         int resId;
         try {
-            if (Utils.isABUpdate(update.getFile())) {
+            if (update.getType().equals("APK"))
+                resId = R.string.apply_update_dialog_apk;
+            else if (Utils.isABUpdate(update.getFile())) {
                 resId = R.string.apply_update_dialog_message_ab;
-            } else {
+            }
+            else {
                 resId = R.string.apply_update_dialog_message;
             }
         } catch (IOException e) {
             Log.e(TAG, "Could not determine the type of the update");
+            e.printStackTrace();
             return null;
         }
 
         String buildDate = StringGenerator.getDateLocalizedUTC(mActivity,
                 DateFormat.MEDIUM, update.getTimestamp());
-        String buildInfoText = mActivity.getString(R.string.list_build_version_date,
-                update.getVersion(), buildDate);
+        String buildInfoText = String.format("%s to v%s", APKExtKt.getAppName(update.getName(), mActivity.getPackageManager()), update.getVersion());
         return new AlertDialog.Builder(mActivity)
                 .setTitle(R.string.apply_update_dialog_title)
                 .setMessage(mActivity.getString(resId, buildInfoText,
